@@ -25,11 +25,7 @@ From the results, I discovered services linked to the email, including a **Googl
 
 I navigated to the repository and explored the commit history. In the very first create commit of (`app.py`), I found the hidden flag.  
 
-### Flag
+### Flag : CloudSEK{Flag\_1\_w3lc0m3\_70\_7h3\_c7f}
 
-``` 
-CloudSEK{Flag\_1\_w3lc0m3\_70\_7h3\_c7f}
-
-```
 
 
