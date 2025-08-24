@@ -19,11 +19,16 @@ Your mission is to continue the investigation from here. Follow the trail, dig d
 ### Solution
 Since this was an OSINT challenge, I began by looking for an email OSINT tool. I used [epieos.com](https://epieos.com/) and searched for the provided email address.  
 
+![image-0](images/image-0.png)
+![image-1](images/image-1.png)
+
 From the results, I discovered services linked to the email, including a **Google Maps profile**. Checking that profile revealed a **review by the local guide**, which contained a GitHub name:
 
 👉 [tuhin1729/tg-bot](https://github.com/tuhin1729/tg-bot)  
 
 I navigated to the repository and explored the commit history. In the very first create commit of (`app.py`), I found the hidden flag.  
+
+![image-2](images/image-2.png)
 
 Flag : CloudSEK{Flag\_1\_w3lc0m3\_70\_7h3\_c7f}
 
