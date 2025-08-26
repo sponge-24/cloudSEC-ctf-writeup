@@ -240,8 +240,6 @@ Output:
 
 Flag : CloudSEK{Flag_3_gr4phq1_!$_fun}
 
-Perfect! Here’s **Challenge 4** formatted in Markdown, keeping all the details, outputs, and reasoning exactly as you provided:
-
 
 ## Challenge: Bypassing Authentication - Flag 4
 
